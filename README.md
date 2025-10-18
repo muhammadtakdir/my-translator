@@ -12,7 +12,9 @@ Coba aplikasinya secara langsung di sini melalui ponsel anda:
 
 https://muhammadtakdir.github.io/my-translator/
 
-https://muhammadtakdir.github.io/my-translator/transAI.html
+https://muhammadtakdir.github.io/my-translator/transAI.html (agak error jika menggunakan ponsel)
+
+https://muhammadtakdir.github.io/my-translator/5bahasa.html
 
 🛠️ Cara Penggunaan
 

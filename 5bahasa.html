@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Penerjemah Suara Live (Versi Stabil)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            touch-action: manipulation;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .listening-pulse {
+            animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        .interim-text {
+            color: #a0aec0; /* gray-400 */
+        }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1a202c; }
+        ::-webkit-scrollbar-thumb { background: #4a5568; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #718096; }
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex items-center justify-center min-h-screen">
+
+    <div class="w-full max-w-4xl mx-auto p-4 md:p-6">
+        <div class="text-center mb-6">
+            <h1 class="text-3xl md:text-4xl font-bold text-cyan-400">Penerjemah Suara Live</h1>
+            <p class="text-gray-400 mt-2">Tekan 'Mulai' dan ucapkan satu kalimat.</p>
+        </div>
+
+        <div id="status" class="text-center mb-6 h-8 flex items-center justify-center">
+             <p class="text-gray-500">Siap untuk menerjemahkan.</p>
+        </div>
+
+        <div class="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-2">
+            <!-- Source Panel -->
+            <div class="w-full bg-gray-800 p-4 rounded-xl shadow-lg">
+                <select id="sourceLang" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2 mb-3 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                    <option value="en-US">Inggris (US)</option>
+                    <option value="id-ID" selected>Indonesia</option>
+                    <option value="ar-SA">Arab</option>
+                    <option value="zh-CN">Cina (Mandarin)</option>
+                    <option value="ko-KR">Korea</option>
+                </select>
+                <div id="sourceText" class="w-full h-48 bg-gray-700 rounded-lg p-3 text-lg overflow-y-auto"></div>
+            </div>
+
+            <!-- Swap Button -->
+            <div class="my-2 md:my-0">
+                <button id="swapBtn" class="p-3 bg-gray-700 hover:bg-cyan-600 rounded-full transition-colors duration-200" title="Tukar Bahasa">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                </button>
+            </div>
+
+            <!-- Target Panel -->
+            <div class="w-full bg-gray-800 p-4 rounded-xl shadow-lg">
+                <select id="targetLang" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2 mb-3 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                    <option value="en-US" selected>Inggris (US)</option>
+                    <option value="id-ID">Indonesia</option>
+                    <option value="ar-SA">Arab</option>
+                    <option value="zh-CN">Cina (Mandarin)</option>
+                    <option value="ko-KR">Korea</option>
+                </select>
+                <div id="targetText" class="w-full h-48 bg-gray-700 rounded-lg p-3 text-lg overflow-y-auto"></div>
+            </div>
+        </div>
+
+        <div class="mt-8 text-center flex justify-center gap-4">
+            <button id="toggleBtn" class="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3 px-8 rounded-full text-xl shadow-lg transition-transform transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-cyan-500 focus:ring-opacity-50">
+                Mulai
+            </button>
+            <button id="clearBtn" class="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-6 rounded-full shadow-md transition-transform transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-gray-500 focus:ring-opacity-50">
+                Hapus
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const sourceLangSelect = document.getElementById('sourceLang');
+        const targetLangSelect = document.getElementById('targetLang');
+        const sourceTextDiv = document.getElementById('sourceText');
+        const targetTextDiv = document.getElementById('targetText');
+        const toggleBtn = document.getElementById('toggleBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const swapBtn = document.getElementById('swapBtn');
+        const statusDiv = document.getElementById('status');
+        
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const speechSynthesis = window.speechSynthesis;
+        let recognition;
+
+        if (!SpeechRecognition) {
+            statusDiv.innerHTML = `<p class="text-red-400">Maaf, browser Anda tidak mendukung fitur suara.</p>`;
+            toggleBtn.disabled = true;
+        } else {
+            initializeRecognition();
+        }
+        
+        let isListening = false;
+
+        function initializeRecognition() {
+            recognition = new SpeechRecognition();
+            recognition.lang = sourceLangSelect.value;
+            recognition.continuous = false; // PALING PENTING: nonaktifkan mode kontinu
+            recognition.interimResults = true;
+
+            recognition.onstart = () => {
+                isListening = true;
+                toggleBtn.textContent = 'Mendengarkan...';
+                toggleBtn.disabled = true;
+                toggleBtn.classList.replace('bg-cyan-600', 'bg-red-600');
+                statusDiv.innerHTML = `<p class="text-green-400 font-semibold listening-pulse">Silakan berbicara...</p>`;
+            };
+
+            recognition.onend = () => {
+                isListening = false;
+                toggleBtn.textContent = 'Mulai';
+                toggleBtn.disabled = false;
+                toggleBtn.classList.replace('bg-red-600', 'bg-cyan-600');
+                statusDiv.innerHTML = `<p class="text-gray-500">Siap untuk kalimat berikutnya.</p>`;
+            };
+
+            recognition.onerror = (event) => {
+                console.error('Speech recognition error:', event.error);
+                let message = 'Terjadi kesalahan.';
+                if (event.error === 'not-allowed') message = 'Izin mikrofon ditolak.';
+                if (event.error === 'no-speech') message = 'Tidak ada suara terdeteksi.';
+                statusDiv.innerHTML = `<p class="text-red-400">${message}</p>`;
+            };
+
+            recognition.onresult = (event) => {
+                let interimTranscript = '';
+                let finalTranscript = '';
+
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += transcript;
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+
+                sourceTextDiv.innerHTML = `<span class="text-white">${finalTranscript}</span><span class="interim-text">${interimTranscript}</span>`;
+
+                if (finalTranscript) {
+                    translateText(finalTranscript);
+                }
+            };
+        }
+
+        async function translateText(text) {
+            targetTextDiv.innerHTML = `<span class="interim-text">Menerjemahkan...</span>`;
+            const sourceLang = sourceLangSelect.value.split('-')[0];
+            const targetLang = targetLangSelect.value.split('-')[0];
+            const targetLangCode = targetLangSelect.value;
+            const apiUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${sourceLang}|${targetLang}`;
+            
+            try {
+                const response = await fetch(apiUrl);
+                if (!response.ok) throw new Error('Network response was not ok.');
+                const data = await response.json();
+
+                if (data.responseData && data.responseData.translatedText) {
+                    const translatedText = data.responseData.translatedText;
+                    targetTextDiv.textContent = translatedText;
+                    speak(translatedText, targetLangCode);
+                }
+            } catch (error) {
+                console.error("Translation API error:", error);
+                targetTextDiv.innerHTML = `<span class="text-red-400">Gagal menerjemahkan.</span>`;
+            }
+        }
+        
+        function speak(text, lang) {
+            if (!text.trim() || !speechSynthesis) return;
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = lang;
+            utterance.rate = 1.0;
+            speechSynthesis.speak(utterance);
+        }
+
+        toggleBtn.addEventListener('click', () => {
+            if (!isListening) {
+                // Hapus teks lama sebelum memulai
+                sourceTextDiv.innerHTML = '';
+                targetTextDiv.innerHTML = '';
+                recognition.lang = sourceLangSelect.value;
+                recognition.start();
+            }
+        });
+
+        clearBtn.addEventListener('click', () => {
+            if (isListening) recognition.stop();
+            sourceTextDiv.innerHTML = '';
+            targetTextDiv.innerHTML = '';
+            speechSynthesis.cancel();
+        });
+
+        swapBtn.addEventListener('click', () => {
+            if (isListening) recognition.stop();
+            const temp = sourceLangSelect.value;
+            sourceLangSelect.value = targetLangSelect.value;
+            targetLangSelect.value = temp;
+        });
+
+        sourceLangSelect.addEventListener('change', () => {
+            if (isListening) recognition.stop();
+            recognition.lang = sourceLangSelect.value;
+        });
+        targetLangSelect.addEventListener('change', () => {
+            if (isListening) recognition.stop();
+        });
+    </script>
+</body>
+</html>
+
+
+
